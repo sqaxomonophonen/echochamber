@@ -82,7 +82,7 @@ struct biquad_setup {
 };
 
 struct biquad_state {
-	float b1, b2, z0, z1;
+	float a0, a1, a2, b1, b2, z0, z1;
 };
 
 struct material {
@@ -197,6 +197,9 @@ static inline void ec_biquad_chain_impulse_run(
 		struct biquad_state* state = &states[bi];
 		float x = y0;
 		y0 *= setup->a0;
+		state->a0 = setup->a0;
+		state->a1 = setup->a1;
+		state->a2 = setup->a2;
 		state->b1 = setup->b1;
 		state->b2 = setup->b2;
 		state->z0 = x * setup->a1 + y0 * setup->b1;
@@ -208,9 +211,11 @@ static inline void ec_biquad_chain_impulse_run(
 		float y = 0.0f;
 		for (int bi = 0; bi < n_biquads; bi++) {
 			struct biquad_state* state = &states[bi];
+			float x = y;
+			y *= state->a0;
 			y += state->z0;
-			state->z0 = y * state->b1 + state->z1;
-			state->z1 = y * state->b2;
+			state->z0 = x * state->a1 + y * state->b1 + state->z1;
+			state->z1 = x * state->a2 + y * state->b2;
 		}
 		out[si] = y;
 	}
