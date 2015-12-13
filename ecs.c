@@ -327,29 +327,28 @@ void ecs_init(
 			ini9.attenuation_product_threshold = attenuation_product_threshold;
 			_append_block(path, "INI9", &ini9, sizeof(ini9));
 		}
+	}
 
-		/* create empty accumulation buffers */
-		{
-			size_t sz = impulse_length_samples * sizeof(float);
+	/* create empty accumulation buffers */
+	{
+		size_t sz = impulse_length_samples * sizeof(float);
 
-			for (int mic_index = 0; mic_index < n_mic; mic_index++) {
-				for (int emg_index = 0; emg_index < n_emg; emg_index++) {
-					char acc_path[MAX_ACC_PATH_LENGTH];
-					_get_acc_path(acc_path, path, &ecs, mic_index, emg_index);
-					int fd = creat(acc_path, 0666);
-					if (fd < 0) {
-						fprintf(stderr, "%s: %s\n", acc_path, strerror(errno));
-						exit(EXIT_FAILURE);
-					}
-					if (ftruncate(fd, sz) < 0) {
-						fprintf(stderr, "%s: %s\n", acc_path, strerror(errno));
-						exit(EXIT_FAILURE);
-					}
-					close(fd);
+		for (int mic_index = 0; mic_index < n_mic; mic_index++) {
+			for (int emg_index = 0; emg_index < n_emg; emg_index++) {
+				char acc_path[MAX_ACC_PATH_LENGTH];
+				_get_acc_path(acc_path, path, &ecs, mic_index, emg_index);
+				int fd = creat(acc_path, 0666);
+				if (fd < 0) {
+					fprintf(stderr, "%s: %s\n", acc_path, strerror(errno));
+					exit(EXIT_FAILURE);
 				}
+				if (ftruncate(fd, sz) < 0) {
+					fprintf(stderr, "%s: %s\n", acc_path, strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+				close(fd);
 			}
 		}
-
 	}
 
 	ecs_close(&ecs);
