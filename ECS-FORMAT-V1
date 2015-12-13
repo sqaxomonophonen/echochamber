@@ -1,0 +1,73 @@
+ECS FORMAT, VERSION 1
+
+float is 32bit
+vec3 is float[3] / float x,y,z;
+rest is defined by stdint.h
+endianness determined by 0xec511235
+
+
+HEADER
+char[4]: "ECSn" (magic, echochamber scene)
+uint32_t: 0xec511235 (endianness detection)
+uint32_t: version (always 1)
+BLOCK* (until EOF)
+
+
+BLOCK
+char[4]: block type
+uint32_t: length (of data)
+char[length]: data
+uint32_t: data terminator (must have the value 0xdeadbeef?)
+
+
+
+BLOCK(BQD0) (biquads block; file must have exactly one)
+uint32_t n_biquads
+n_biquads x {
+	// coefficients
+	float: a0
+	float: a1
+	float: a2
+	float: b0
+	float: b1
+}
+
+BLOCK(EMG0) (emission groups; file must have exactly one)
+uint32_t n_emission_groups
+n_emission_groups x {
+	char[64]: name (zero padded)
+}
+
+BLOCK(MIC0) (microphones; file must have exactly one)
+uint32_t n_microphones
+n_microphones x {
+	char[64]: name (zero padded)
+	vec3: position
+}
+
+BLOCK(MAT0) (materials; file must have exactly one)
+uint32_t n_materials
+n_materials x {
+	int32_t: emission group index, -1 if not an emitter
+	uint32_t: biquad index
+	float: specular hardness
+}
+
+BLOCK(PLY0) (polygons; file must have exactly one)
+{
+	uint32_t: material index
+	uint32_t: n_vertices (3 or above)
+	n_vertices x {
+		vec3: coordinate
+	}
+}*
+
+
+--- optional blocks ---
+
+BLOCK(INI9) (initialization; must have 0 or 1; presence indicates files has been initialized by ec)
+uint32_t: sample_rate
+float: speed_of_sound_units_per_second
+uint32_t: impulse_length_samples
+float: attenuation_product_threshold
+
