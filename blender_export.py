@@ -38,14 +38,18 @@ class Biquads(ISet):
 		return self._add((a0, a1, a2, b1, b2))
 
 	def add_std_highpass(self):
-		# hz=48000hz
-		# fc=1375hz
-		# q=0.7071
-		a0 = 0.8804686573973374
-		a1 = -1.7609373147946747
-		a2 = 0.8804686573973374
-		b1 = -1.7465984140629678
-		b2 = 0.7752762155263814
+		# XXX too low Q kills the signal, too high Q causes
+		# amplification towards infinity
+		#  this one has a nice falloff
+		#    hz=48000hz
+		#    fc=13058hz
+		#    q=0.37
+		a0 = 0.2433380644366378
+		a1 = 0.4866761288732756
+		a2 = 0.2433380644366378
+		b1 = 0.11807119804780962
+		b2 = -0.14471894030125848
+
 		# flipping a0/a1/a2 to cause phase inversion. THIS IS HIGHLY
 		# SCIENTIFIC I SAW IT ON FRINGE
 		return self.add(-a0, -a1, -a2, b1, b2)

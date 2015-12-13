@@ -332,8 +332,6 @@ static void ray_pew_pew(
 	int biquad_stack[EC_MAX_BOUNCES];
 	int biquad_stack_top = 0;
 
-	float atten = 1.0f;
-
 	do {
 		stats->n_bounces++;
 
@@ -389,7 +387,6 @@ static void ray_pew_pew(
 				return;
 			}
 			#endif
-			atten *= 0.99f;
 
 			biquad_stack[biquad_stack_top++] = biquad_setup_index;
 
@@ -424,7 +421,6 @@ static void ray_pew_pew(
 
 			float* accoff = acc + soff;
 
-			#if 0
 			struct biquad_state states[EC_MAX_BOUNCES];
 			ec_biquad_chain_impulse_run(
 				biquad_stack_top,
@@ -433,11 +429,6 @@ static void ray_pew_pew(
 				states,
 				n,
 				accoff);
-			#else
-			/* XXX simple noise falloff thing,
-			 * ec_biquad_chain_impulse_run creates infs! */
-			accoff[0] += (rng_float(&worker->rng) - 0.5f) * atten;
-			#endif
 
 			stats->n_hits++;
 			return;
@@ -520,6 +511,7 @@ void sigint_handler(int sig)
 
 void ec_run(char* path, int n_workers)
 {
+
 	ecs_info(path);
 
 	struct ecs ecs;
