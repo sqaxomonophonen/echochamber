@@ -42,3 +42,6 @@ is currently ignored.
  - Ray-polygon intersection optimizations
  - Support for Blender smoothing groups?
  - Animation rendering? (render actual sound rather than just an impulse response)
+ 
+# License?
+Nope, it's public domain.
