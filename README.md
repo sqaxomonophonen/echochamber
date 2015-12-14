@@ -1,6 +1,6 @@
 # echochamber
 
-An impulse response path tracer.
+A sound path tracer.
 
 It renders an impulse response (suitable for convolution reverb) of a 3d model by applying some of the principles
 used in a visual path tracer; rays are traced from "microphones", bounced randomly off walls, in hope of hitting a
@@ -8,6 +8,8 @@ sound emitter. Each bounce pushes a filter onto a stack analogous to how colors 
 path tracer. When a path to a sound emitter is found, an impulse (i.e. `f[0]=1`, `f[x]=0` for `x!=0`) is filtered
 through the filter stack, delayed according to distance traveled vs speed of sound, and finally added to the output
 impulse response.
+
+I have no idea how "scientifically correct" any of this is, but it already produces convincing results, so uh.., yeah!
 
 ## Try this
 ```
