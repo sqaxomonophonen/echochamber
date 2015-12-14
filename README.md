@@ -19,6 +19,12 @@ impulse response.
 mplayer room2.ecs.wav
 ```
 
+## Blender integration
+
+Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Pretty much everything else
+is currently ignored.
+
+
 ## Features
 - Blender exporter
 - Multiple microphones and emission groups (similar to light groups in LuxRender)
@@ -29,8 +35,10 @@ mplayer room2.ecs.wav
  - Material control from Blender
  - Replace biquads with FIRs?
  - Better filter control (currently too easy to pass biquad coefficients that amplify certain frequencies and cause the response to "blow up")
+ - Various microphone characteristics (currently omni-directional only, how about cardioid and friends?)
  - Air scattering? (randomly filter/refract rays based on distance traveled)
  - Subsurface scattering?
  - Finish `ec mixdown`; one .wav per microphone; specify mix levels for each emission group
  - Ray-polygon intersection optimizations
  - Support for Blender smoothing groups?
+ - Animation rendering? (render actual sound rather than just an impulse response)
