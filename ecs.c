@@ -284,6 +284,7 @@ void ecs_info(char* path)
 		printf("  speed of sound              = %.3f u/s\n", ini9->speed_of_sound_units_per_second);
 		printf("  impulse length              = %d samples\n", ini9->impulse_length_samples);
 		printf("  attenuation threshold       = %.3e\n", ini9->attenuation_product_threshold);
+		printf("  indirect only               = %s\n", ini9->indirect_only ? "yes" : "no");
 	}
 
 	printf("scene:\n");
@@ -303,7 +304,8 @@ void ecs_init(
 	int sample_rate,
 	float speed_of_sound_units_per_second,
 	int impulse_length_samples,
-	float attenuation_product_threshold
+	float attenuation_product_threshold,
+	int indirect_only
 ) {
 	struct ecs ecs;
 	ecs_open(&ecs, path);
@@ -324,6 +326,7 @@ void ecs_init(
 	ini9->speed_of_sound_units_per_second = speed_of_sound_units_per_second;
 	ini9->impulse_length_samples = impulse_length_samples;
 	ini9->attenuation_product_threshold = attenuation_product_threshold;
+	ini9->indirect_only = indirect_only;
 
 	if (!is_initialized) {
 		/* append INI9 block */

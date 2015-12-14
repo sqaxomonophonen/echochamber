@@ -128,6 +128,7 @@ struct session {
 	int impulse_length_samples;
 	float attenuation_product_threshold;
 	int n_rays_per_commit;
+	int indirect_only;
 
 	/* derived from setup */
 	float distance_units_to_samples;
@@ -135,32 +136,18 @@ struct session {
 	float impulse_length_seconds;
 };
 
-
-struct worker_stats {
-	uint64_t n_rays;
-	uint64_t n_bounces;
-	uint64_t n_hits;
-	uint64_t n_rays_escaped;
-	uint64_t n_commits;
-};
-
-static void worker_stats_accumulate(struct worker_stats* target, struct worker_stats* source)
+static void stats_print(struct ecs_initialization* init)
 {
-	target->n_rays += source->n_rays;
-	target->n_hits += source->n_hits;
-	target->n_bounces += source->n_bounces;
-	target->n_rays_escaped += source->n_rays_escaped;
-	target->n_commits += source->n_commits;
-}
-
-static void worker_stats_print(struct worker_stats* st)
-{
-	printf("%ld rays\t%ld hits\t%ld bounces\t%ld escaped\t%ld commits\n",
-		st->n_rays,
-		st->n_hits,
-		st->n_bounces,
-		st->n_rays_escaped,
-		st->n_commits);
+	struct ecs_global_stats* gst = &init->global_stats;
+	struct ecs_worker_stats* wst = &init->worker_stats;
+	printf("%lds\t%ld rays\t%ld hits\t%ld bounces\t%ld escaped\t%ld commits\t%.2e units traveled\n",
+		gst->render_time_ms / 1000,
+		wst->n_rays,
+		wst->n_hits,
+		wst->n_bounces,
+		wst->n_rays_escaped,
+		wst->n_commits,
+		wst->units_traveled);
 }
 
 struct worker {
@@ -170,7 +157,7 @@ struct worker {
 
 	float** accumulators;
 
-	struct worker_stats stats;
+	struct ecs_worker_stats stats;
 
 	int quit;
 	pthread_mutex_t mutex;
@@ -314,7 +301,7 @@ static inline union vec3 vec3_random_hemisphere_cosine(struct rng* rng)
 static void ray_pew_pew(
 	struct session* restrict session,
 	struct worker* restrict worker,
-	struct worker_stats* restrict stats,
+	struct ecs_worker_stats* restrict stats,
 	int micidx)
 {
 	stats->n_rays++;
@@ -368,7 +355,7 @@ static void ray_pew_pew(
 		}
 
 		distance += nearest_t;
-		// stats->total_distance += nearest_t?
+		stats->units_traveled += (double)nearest_t;
 
 		struct material* m = &session->materials[session->poly_material_indices[nearest_poly_index]];
 
@@ -408,6 +395,9 @@ static void ray_pew_pew(
 			}
 		} else {
 			/* hit an emitter; calculate contribution */
+			if (session->indirect_only && biquad_stack_top == 0) {
+				return;
+			}
 
 			int acci = micidx * session->n_microphones + m->emission_group_index;
 			float* acc = worker->accumulators[acci];
@@ -472,7 +462,7 @@ static void run(
 	int n_rays_since_commit = 0;
 	for (;;) {
 		for (int micidx = 0; micidx < n_microphones; micidx++) {
-			struct worker_stats stats;
+			struct ecs_worker_stats stats;
 			memset(&stats, 0, sizeof(stats));
 			for (int j = 0; j < n_rays_per_microphone; j++) {
 				ray_pew_pew(session, worker, &stats, micidx);
@@ -481,7 +471,7 @@ static void run(
 
 			int quitting = 0;
 			pthread_mutex_lock(&worker->mutex);
-			worker_stats_accumulate(&worker->stats, &stats);
+			ecs_worker_stats_accumulate(&worker->stats, &stats);
 			quitting = worker->quit;
 			pthread_mutex_unlock(&worker->mutex);
 
@@ -509,6 +499,13 @@ void sigint_handler(int sig)
 	master_quit = 1;
 }
 
+static uint64_t timespec_diff_ms(struct timespec* t0, struct timespec* t1)
+{
+	uint64_t t0ms = t0->tv_sec * 1000L + t0->tv_nsec / 1000000L;
+	uint64_t t1ms = t1->tv_sec * 1000L + t1->tv_nsec / 1000000L;
+	return t1ms - t0ms;
+}
+
 void ec_run(char* path, int n_workers)
 {
 
@@ -531,6 +528,7 @@ void ec_run(char* path, int n_workers)
 		s->speed_of_sound_units_per_second = ei->speed_of_sound_units_per_second;
 		s->impulse_length_samples = ei->impulse_length_samples;
 		s->attenuation_product_threshold = ei->attenuation_product_threshold;
+		s->indirect_only = ei->indirect_only;
 
 		/* derived units */
 		s->distance_units_to_samples = s->sample_rate / s->speed_of_sound_units_per_second;
@@ -648,30 +646,36 @@ void ec_run(char* path, int n_workers)
 	master_quit = 0;
 	signal(SIGINT, sigint_handler);
 
-	struct worker_stats stats;
+	uint64_t t0 = ecs.initialization->global_stats.render_time_ms;
+	struct timespec ts0;
+	clock_gettime(CLOCK_MONOTONIC, &ts0);
 
 	while (!master_quit) {
 		sleep(1);
-		memset(&stats, 0, sizeof(stats));
 		for (int i = 0; i < n_workers; i++) {
 			struct worker* worker = &workers[i];
 			pthread_mutex_lock(&worker->mutex);
 			worker->quit = master_quit;
-			worker_stats_accumulate(&stats, &worker->stats);
+			ecs_worker_stats_accumulate(&ecs.initialization->worker_stats, &worker->stats);
+			memset(&worker->stats, 0, sizeof(worker->stats));
 			pthread_mutex_unlock(&worker->mutex);
 
 		}
-		worker_stats_print(&stats);
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		uint64_t local_ms_elapsed = timespec_diff_ms(&ts0, &ts);
+		ecs.initialization->global_stats.render_time_ms = t0 + local_ms_elapsed;
+
+		stats_print(ecs.initialization);
 	}
 
 	printf("waiting for workers to quit...\n");
-	memset(&stats, 0, sizeof(stats));
 	for (int i = 0; i < n_workers; i++) {
 		struct worker* worker = &workers[i];
 		pthread_join(thread_args[i].tid, NULL);
-		worker_stats_accumulate(&stats, &worker->stats);
+		ecs_worker_stats_accumulate(&ecs.initialization->worker_stats, &worker->stats);
 	}
-	worker_stats_print(&stats);
+	stats_print(ecs.initialization);
 
 	printf("done\n");
 

@@ -48,6 +48,7 @@ static void cmd_init(struct pot* pot)
 	float speed_of_sound_units_per_second = 343.2f;
 	int impulse_length_samples = 5 * sample_rate;
 	float attenuation_product_threshold = 1e-6f;
+	int indirect_only = 0;
 
 	while (pot_next(pot)) {
 		if ((pot->is_swtch && pot->swtch == 'f') || (pot->is_opt && strcmp(pot->opt, "--force") == 0)) {
@@ -65,6 +66,9 @@ static void cmd_init(struct pot* pot)
 		else if ((pot->is_swtch && pot->swtch == 'a') || (pot->is_opt && strcmp(pot->opt, "--attenuation-product-threshold") == 0)) {
 			attenuation_product_threshold = pot_int(pot); // XXX pot_float
 		}
+		else if ((pot->is_swtch && pot->swtch == 'I') || (pot->is_opt && strcmp(pot->opt, "--indirect-only") == 0)) {
+			indirect_only = 1;
+		}
 		else {
 			pot_reject(pot);
 		}
@@ -76,7 +80,8 @@ static void cmd_init(struct pot* pot)
 		sample_rate,
 		speed_of_sound_units_per_second,
 		impulse_length_samples,
-		attenuation_product_threshold
+		attenuation_product_threshold,
+		indirect_only
 	);
 
 	ecs_info(path);
