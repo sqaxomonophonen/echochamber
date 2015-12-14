@@ -25,12 +25,12 @@ Cameras are microphones. Materials with non-zero emit parameters are sound emitt
 is currently ignored.
 
 
-## Features
+# Features
 - Blender exporter
 - Multiple microphones and emission groups (similar to light groups in LuxRender)
 - "Indirect only" mode (`-I` switch to `ec init`); discards direct response, useful for dry/wet control
 
-## TODO
+# TODO
  - Specular reflection, use a better BRDF function in general...
  - Material control from Blender
  - Replace biquads with FIRs?
@@ -43,6 +43,10 @@ is currently ignored.
  - Ray-polygon intersection optimizations
  - Support for Blender smoothing groups?
  - Animation rendering? (render actual sound rather than just an impulse response)
- 
+
+# Thanks
+ - Biquad coefficient calulator: http://www.earlevel.com/main/2013/10/13/biquad-calculator-v2/
+ - Excellent compendium on global illumination: http://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
+
 # License?
 Nope, it's public domain.
