@@ -21,7 +21,7 @@ mplayer room2.ecs.wav
 
 ## Features
 - Blender exporter
-- Multiple microphones and multiple emission groups (similar to light groups in LuxRender)
+- Multiple microphones and emission groups (similar to light groups in LuxRender)
 - "Indirect only" mode (`-I` switch to `ec init`); discards direct response, useful for dry/wet control
 
 ## TODO
