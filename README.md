@@ -19,7 +19,7 @@ impulse response.
 mplayer room2.ecs.wav
 ```
 
-## Blender integration
+# Blender integration
 
 Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Pretty much everything else
 is currently ignored.
