@@ -35,6 +35,7 @@ is currently ignored.
  - Material control from Blender
  - Replace biquads with FIRs?
  - Better filter control (currently too easy to pass biquad coefficients that amplify certain frequencies and cause the response to "blow up")
+ - Sound emitter time offset (to allow multiple impulses at various times)
  - Various microphone characteristics (currently omni-directional only, how about cardioid and friends?)
  - Air scattering? (randomly filter/refract rays based on distance traveled)
  - Subsurface scattering?
