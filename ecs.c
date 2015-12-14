@@ -316,17 +316,18 @@ void ecs_init(
 		exit(EXIT_FAILURE);
 	}
 
+	struct ecs_initialization _ini9;
+	struct ecs_initialization* ini9 = is_initialized ? ecs.initialization : &_ini9;
+
+	memset(ini9, 0, sizeof(*ini9));
+	ini9->sample_rate = sample_rate;
+	ini9->speed_of_sound_units_per_second = speed_of_sound_units_per_second;
+	ini9->impulse_length_samples = impulse_length_samples;
+	ini9->attenuation_product_threshold = attenuation_product_threshold;
+
 	if (!is_initialized) {
 		/* append INI9 block */
-		{
-			struct ecs_initialization ini9;
-			memset(&ini9, 0, sizeof(ini9));
-			ini9.sample_rate = sample_rate;
-			ini9.speed_of_sound_units_per_second = speed_of_sound_units_per_second;
-			ini9.impulse_length_samples = impulse_length_samples;
-			ini9.attenuation_product_threshold = attenuation_product_threshold;
-			_append_block(path, "INI9", &ini9, sizeof(ini9));
-		}
+		_append_block(path, "INI9", ini9, sizeof(*ini9));
 	}
 
 	/* create empty accumulation buffers */
