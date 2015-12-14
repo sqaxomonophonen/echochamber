@@ -183,7 +183,7 @@ struct worker_thread_args {
 };
 
 
-static inline void ec_biquad_chain_impulse_run(
+static inline void biquad_chain_impulse_run(
 	int n_biquads,
 	struct biquad_setup* setups,
 	int* setup_indices,
@@ -422,7 +422,7 @@ static void ray_pew_pew(
 			float* accoff = acc + soff;
 
 			struct biquad_state states[EC_MAX_BOUNCES];
-			ec_biquad_chain_impulse_run(
+			biquad_chain_impulse_run(
 				biquad_stack_top,
 				session->biquad_setups,
 				biquad_stack,
