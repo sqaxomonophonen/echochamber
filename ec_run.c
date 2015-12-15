@@ -379,7 +379,9 @@ static void ray_pew_pew(
 
 			// calculate new ray, and continue
 			ray_origin = nearest_position;
+			#if 0
 			{
+				/* diffuse reflection */
 				union vec3* vs = &session->poly_vertex_cords[nearest_voff];
 				union vec3 bx = vec3_unit(vec3_sub(vs[1], vs[0]));
 				union vec3 bz = vec3_unit(vec3_cross(bx, vec3_sub(vs[2], vs[0])));
@@ -393,6 +395,15 @@ static void ray_pew_pew(
 					)
 				);
 			}
+			#else
+			{
+				/* perfect reflection */
+				union vec3* vs = &session->poly_vertex_cords[nearest_voff];
+				union vec3 normal = vec3_unit(vec3_cross(vec3_sub(vs[1], vs[0]), vec3_sub(vs[2], vs[0])));
+				union vec3 incident = vec3_unit(ray_direction);
+				ray_direction = vec3_unit(vec3_sub(incident, vec3_scale(normal, 2.0 * vec3_dot(normal, incident))));
+			}
+			#endif
 		} else {
 			/* hit an emitter; calculate contribution */
 			if (session->indirect_only && biquad_stack_top == 0) {
