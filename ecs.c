@@ -385,6 +385,8 @@ void ecs_mixdown(char* path)
 		}
 	}
 
+	float maxabs = 0;
+	float min = 0;
 	float max = 0;
 	int n_nan = 0;
 	int n_inf = 0;
@@ -398,11 +400,13 @@ void ecs_mixdown(char* path)
 			n_inf++;
 			continue;
 		}
-		float a = fabsf(v);
-		if (a > max) max = a;
+		float av = fabsf(v);
+		if (av > maxabs) maxabs = av;
+		if (s == 0 || v > max) max = v;
+		if (s == 0 || v < min) min = v;
 	}
 
-	printf("max value: %.5f\n", max);
+	printf("range: %.5f to %.5f\n", min, max);
 	printf("nans: %d\n", n_nan);
 	printf("infs: %d\n", n_inf);
 	char out[1<<13];
@@ -442,7 +446,7 @@ void ecs_mixdown(char* path)
 		writen_or_die(fd, "data ", 4);
 		W32(2 * n_samples);
 		for (int s = 0; s < n_samples; s++) {
-			W16((mix[s] / max) * 32767.0f);
+			W16((mix[s] / maxabs) * 32767.0f);
 		}
 
 		#undef W16
