@@ -138,7 +138,8 @@ for bo in bpy.data.objects:
 				emission_group_id = -1
 				# TODO allow direct definition via custom
 				# properties
-				filter_id = filters.add("bz0(500:%.3f:0,2000:%.3f:0,5000:%.3f:0)" % tuple(material.diffuse_color))
+				r,g,b = tuple(material.diffuse_color)
+				filter_id = filters.add("bz0(500:%.3f:0,2000:%.3f:0,5000:%.3f:0)" % (-r,-g,-b))
 
 			material_id = materials.add(emission_group_id, filter_id, hardness)
 
