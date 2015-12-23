@@ -24,7 +24,7 @@ mplayer room2.ecs.wav
 
 # Blender integration
 
-Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Pretty much everything else
+Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Non emitting materials are reflectors where the diffuse RGB color is mapped to a filter (red=500hz, green=2khz, blue=5khz). Pretty much everything else
 is currently ignored.
 
 
