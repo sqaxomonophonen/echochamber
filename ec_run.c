@@ -552,7 +552,8 @@ static void calc_kaiser_bessel_window(struct session* s, float att)
 	float I0alpha = bessel_I0(alpha);
 	int n = s->fir_length;
 	for (int i = 0; i < n; i++) {
-		s->fir_window[i] = bessel_I0(alpha * sqrtf(1 - ((float)(i*i) / (float)(n*n)))) / I0alpha;
+		float x = ((float)i - ((float)n / 2.0f)) * 2.0f;
+		s->fir_window[i] = bessel_I0(alpha * sqrtf(1 - ((x*x) / (float)(n*n)))) / I0alpha;
 	}
 }
 void ec_run(char* path, int n_workers)
