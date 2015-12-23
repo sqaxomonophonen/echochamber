@@ -47,7 +47,8 @@ static void cmd_init(struct pot* pot)
 	int sample_rate = 48000;
 	float speed_of_sound_units_per_second = 343.2f;
 	int impulse_length_samples = 5 * sample_rate;
-	float attenuation_product_threshold = 1e-6f;
+	int fir_length = 64;
+	enum ecs_fir_window_function fir_window_function = ECS_FIR_WINDOW_FN_KAISER_BESSEL;
 	int indirect_only = 0;
 
 	while (pot_next(pot)) {
@@ -63,9 +64,6 @@ static void cmd_init(struct pot* pot)
 		else if ((pot->is_swtch && pot->swtch == 'l') || (pot->is_opt && strcmp(pot->opt, "--impulse-length") == 0)) {
 			impulse_length_samples = pot_int(pot) * sample_rate;
 		}
-		else if ((pot->is_swtch && pot->swtch == 'a') || (pot->is_opt && strcmp(pot->opt, "--attenuation-product-threshold") == 0)) {
-			attenuation_product_threshold = pot_int(pot); // XXX pot_float
-		}
 		else if ((pot->is_swtch && pot->swtch == 'I') || (pot->is_opt && strcmp(pot->opt, "--indirect-only") == 0)) {
 			indirect_only = 1;
 		}
@@ -80,7 +78,8 @@ static void cmd_init(struct pot* pot)
 		sample_rate,
 		speed_of_sound_units_per_second,
 		impulse_length_samples,
-		attenuation_product_threshold,
+		fir_length,
+		fir_window_function,
 		indirect_only
 	);
 

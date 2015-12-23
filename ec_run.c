@@ -10,6 +10,8 @@
 #include "rng.h"
 #include "sys.h"
 #include "cpu.h"
+#include "flt0.h"
+#include "flt0.yy.h"
 
 #define EC_MAX_BOUNCES (150)
 
@@ -76,18 +78,8 @@ static inline union vec3 vec3_unit(union vec3 v)
 	return vec3_scale(v, 1.0 / sqrtf(vec3_dot(v, v)));
 }
 
-struct biquad_setup {
-	float a0, a1, a2, b1, b2;
-	//float attenuation; // XXX must be derived
-};
-
-struct biquad_state {
-	float a0, a1, a2, b1, b2, z0, z1;
-};
-
 struct material {
-	int biquad_setup_index;
-	/* attenuation is included in the biquad as a0 I guess? */
+	int filter_index;
 	float hardness;
 	int emission_group_index; // -1 -> not an emitter
 };
@@ -104,7 +96,7 @@ struct microphone {
 };
 
 struct session {
-	struct biquad_setup* biquad_setups;
+	float* filter_coefficients;
 	struct material* materials;
 
 	int n_emission_groups;
@@ -126,7 +118,7 @@ struct session {
 	float sample_rate;
 	float speed_of_sound_units_per_second;
 	int impulse_length_samples;
-	float attenuation_product_threshold;
+	int fir_length;
 	int n_rays_per_commit;
 	int indirect_only;
 
@@ -134,6 +126,7 @@ struct session {
 	float distance_units_to_samples;
 	float ray_max_distance;
 	float impulse_length_seconds;
+	float* fir_window;
 };
 
 static void stats_print(struct ecs_initialization* init)
@@ -154,8 +147,11 @@ struct worker {
 	uint32_t index;
 
 	struct rng rng;
+	float* filter_coefficients;
 
 	float** accumulators;
+
+	float* coefficient_product;
 
 	struct ecs_worker_stats stats;
 
@@ -169,44 +165,6 @@ struct worker_thread_args {
 	struct worker* worker;
 };
 
-
-static inline void biquad_chain_impulse_run(
-	int n_biquads,
-	struct biquad_setup* setups,
-	int* setup_indices,
-	struct biquad_state* states,
-	int n_samples,
-	float* out)
-{
-	float y0 = 1.0f;
-	for (int bi = 0; bi < n_biquads; bi++) {
-		struct biquad_setup* setup = &setups[setup_indices[bi]];
-		struct biquad_state* state = &states[bi];
-		float x = y0;
-		y0 *= setup->a0;
-		state->a0 = setup->a0;
-		state->a1 = setup->a1;
-		state->a2 = setup->a2;
-		state->b1 = setup->b1;
-		state->b2 = setup->b2;
-		state->z0 = x * setup->a1 + y0 * setup->b1;
-		state->z1 = x * setup->a2 + y0 * setup->b2;
-	}
-	out[0] = y0;
-
-	for (int si = 1; si < n_samples; si++) {
-		float y = 0.0f;
-		for (int bi = 0; bi < n_biquads; bi++) {
-			struct biquad_state* state = &states[bi];
-			float x = y;
-			y *= state->a0;
-			y += state->z0;
-			state->z0 = x * state->a1 + y * state->b1 + state->z1;
-			state->z1 = x * state->a2 + y * state->b2;
-		}
-		out[si] = y;
-	}
-}
 
 static void worker_init(struct worker* w, struct session* s, uint32_t index)
 {
@@ -226,6 +184,8 @@ static void worker_init(struct worker* w, struct session* s, uint32_t index)
 	for (int i = 0; i < n_accumulators; i++) {
 		w->accumulators[i] = calloc_or_die(s->impulse_length_samples, sizeof(**w->accumulators));
 	}
+
+	w->coefficient_product = calloc_or_die(s->fir_length, sizeof(*w->coefficient_product));
 }
 
 static inline float ray_poly_intersection(union vec3 p0, union vec3 dir, int nv, union vec3* vs, union vec3* x)
@@ -316,8 +276,15 @@ static void ray_pew_pew(
 	union vec3 ray_origin = mic->position;
 	union vec3 ray_direction = vec3_random_unit(&worker->rng);
 
-	int biquad_stack[EC_MAX_BOUNCES];
-	int biquad_stack_top = 0;
+	int fir_length = session->fir_length;
+	float* coefficient_product = worker->coefficient_product;
+
+	/* reset all coefficients to 1+0j */
+	for (int i = 0; i < fir_length; i++) {
+		coefficient_product[i] = i&1 ? 0.0f : 1.0f;
+	}
+
+	int bounces = 0;
 
 	do {
 		stats->n_bounces++;
@@ -362,24 +329,24 @@ static void ray_pew_pew(
 		if (m->emission_group_index < 0) {
 			/* hit a reflective surface; bounce */
 
-			int biquad_setup_index = m->biquad_setup_index;
+			bounces++;
 
-			/* FIXME doesn't make sense to calculate and act on the
-			 * attenuation product before the biquad attenuation
-			 * has a meaningful value */
-			#if 0
-			attenuation_product *= session->biquad_setups[biquad_setup_index].attenuation;
-			if (attenuation_product < session->attenuation_product_threshold) {
-				/* signal got too weak; abandoning ray */
-				return;
+			float* filter_coefficients = session->filter_coefficients + fir_length * m->filter_index;
+			for (int i = 0; i < fir_length/2; i++) {
+				/* (a+bi)*(c+di) = (a*c - b*d) + (b*c + a*d)i */
+				int idx = i<<1;
+				coefficient_product[idx] =
+					coefficient_product[idx] * filter_coefficients[idx]
+					- coefficient_product[idx+1] * filter_coefficients[idx+1];
+				coefficient_product[idx+1] =
+					coefficient_product[idx+1] * filter_coefficients[idx]
+					+ coefficient_product[idx] * filter_coefficients[idx+1];
 			}
-			#endif
 
-			biquad_stack[biquad_stack_top++] = biquad_setup_index;
 
 			// calculate new ray, and continue
 			ray_origin = nearest_position;
-			#if 0
+			#if 1
 			{
 				/* diffuse reflection */
 				union vec3* vs = &session->poly_vertex_cords[nearest_voff];
@@ -406,35 +373,60 @@ static void ray_pew_pew(
 			#endif
 		} else {
 			/* hit an emitter; calculate contribution */
-			if (session->indirect_only && biquad_stack_top == 0) {
+
+			if (session->indirect_only && bounces == 0) {
+				return;
+			}
+
+			float fsoff = distance * session->distance_units_to_samples;
+			int soff = fsoff;
+
+			int N = session->fir_length;
+			int s0 = soff - N/2;
+			float s0f = distance * session->distance_units_to_samples - N/2;
+			int s1 = soff + N/2;
+
+			int impulse_length_samples = session->impulse_length_samples;
+
+			int s0s = s0 < 0 ? 0 : s0;
+			int s1s = s1 > impulse_length_samples-1 ? impulse_length_samples-1 : s1;
+
+			if (s1s-s0s <= 0) {
+				/* outside range; cull */
 				return;
 			}
 
 			int acci = micidx * session->n_microphones + m->emission_group_index;
 			float* acc = worker->accumulators[acci];
 
-			int soff = distance * session->distance_units_to_samples + rng_float(&worker->rng);
-			int n = 64;
-			if (soff + n > session->impulse_length_samples) {
-				n = session->impulse_length_samples - soff;
-				if (n < 2) return;
+			int Nhalf = N>>1;
+			float C = (2 * M_PI) / (float)N;
+			float* fir_window = session->fir_window;
+			for (int i = s0s; i < s1s; i++) {
+				float k = (float)i - s0f;
+				float Ck = C * k;
+
+				float y = 1;
+
+				for (int n = 0; n < Nhalf; n++) {
+					float phi0 = Ck * (float)(n+1);
+					float phi1 = Ck * (float)(N-n-1);
+					/*
+					s x*cos(phi) + x*sin(phi)*i
+					(a+bi)*(c+di) = (a*c - b*d) + (b*c + a*d)i
+					*/
+					float impfft = (n&1) ? 1 : -1;
+					y +=
+						impfft * coefficient_product[n<<1] * (cosf(phi0) + cosf(phi1)) -
+						impfft * coefficient_product[(n<<1)+1] * (sinf(phi0) - sinf(phi1));
+				}
+				acc[i] = y * fir_window[i - s0];
 			}
-
-			float* accoff = acc + soff;
-
-			struct biquad_state states[EC_MAX_BOUNCES];
-			biquad_chain_impulse_run(
-				biquad_stack_top,
-				session->biquad_setups,
-				biquad_stack,
-				states,
-				n,
-				accoff);
 
 			stats->n_hits++;
 			return;
 		}
-	} while(distance < ray_max_distance && biquad_stack_top < EC_MAX_BOUNCES);
+	} while(distance < ray_max_distance && bounces < EC_MAX_BOUNCES);
 }
 
 static void commit(
@@ -517,6 +509,52 @@ static uint64_t timespec_diff_ms(struct timespec* t0, struct timespec* t1)
 	return t1ms - t0ms;
 }
 
+static int bz0_fp_frq_sort(const void* va, const void* vb)
+{
+	const struct flt0_bz0_point* a = va;
+	const struct flt0_bz0_point* b = vb;
+	return a->frq - b->frq;
+}
+
+static float bz0_crv(float t, float y0, float y1)
+{
+	float t1 = 1-t;
+	return
+		y0 * t1*t1*t1 +
+		y0 * 3*t * t1*t1 +
+		y1 * 3*t*t * t1 +
+		y1 * t*t*t;
+}
+
+
+static float bessel_I0(float x)
+{
+	float d = 0;
+	float ds = 1;
+	float s = 1;
+	do {
+		d += 2;
+		ds *= (x*x) / (d*d);
+		s += ds;
+	} while (ds > s*1e-6);
+	return s;
+}
+
+static void calc_kaiser_bessel_window(struct session* s, float att)
+{
+	float alpha = 0;
+	if (att > 50) {
+		alpha = 0.1102 * (att - 8.7);
+	} else if (att >= 21) {
+		alpha = 0.5842 * powf(att - 21, 0.4) + 0.07886 * (att - 21);
+	}
+
+	float I0alpha = bessel_I0(alpha);
+	int n = s->fir_length;
+	for (int i = 0; i < n; i++) {
+		s->fir_window[i] = bessel_I0(alpha * sqrtf(1 - ((float)(i*i) / (float)(n*n)))) / I0alpha;
+	}
+}
 void ec_run(char* path, int n_workers)
 {
 
@@ -525,7 +563,7 @@ void ec_run(char* path, int n_workers)
 	struct ecs ecs;
 	ecs_open(&ecs, path);
 
-	struct session* s = calloc_or_die(1, sizeof(*s));
+	struct session* session = calloc_or_die(1, sizeof(*session));
 
 	{
 		struct ecs_initialization* ei = ecs.initialization;
@@ -535,50 +573,161 @@ void ec_run(char* path, int n_workers)
 			exit(EXIT_FAILURE);
 		}
 
-		s->sample_rate = ei->sample_rate;
-		s->speed_of_sound_units_per_second = ei->speed_of_sound_units_per_second;
-		s->impulse_length_samples = ei->impulse_length_samples;
-		s->attenuation_product_threshold = ei->attenuation_product_threshold;
-		s->indirect_only = ei->indirect_only;
+		session->sample_rate = ei->sample_rate;
+		session->speed_of_sound_units_per_second = ei->speed_of_sound_units_per_second;
+		session->impulse_length_samples = ei->impulse_length_samples;
+		session->fir_length = ei->fir_length;
+		session->indirect_only = ei->indirect_only;
 
 		/* derived units */
-		s->distance_units_to_samples = s->sample_rate / s->speed_of_sound_units_per_second;
-		s->impulse_length_seconds = s->impulse_length_samples / s->sample_rate;
-		s->ray_max_distance = s->speed_of_sound_units_per_second * s->impulse_length_seconds;
-		s->impulse_length_samples = s->impulse_length_seconds * s->sample_rate;
+		session->distance_units_to_samples = session->sample_rate / session->speed_of_sound_units_per_second;
+		session->impulse_length_seconds = session->impulse_length_samples / session->sample_rate;
+		session->ray_max_distance = session->speed_of_sound_units_per_second * session->impulse_length_seconds;
+		session->impulse_length_samples = session->impulse_length_seconds * session->sample_rate;
+
+		session->fir_window = calloc_or_die(session->fir_length, sizeof(*session->fir_window));
+
+		switch (ei->fir_window_function) {
+			case ECS_FIR_WINDOW_FN_KAISER_BESSEL:
+				calc_kaiser_bessel_window(session, 40.0f);
+				break;
+			default:
+				fprintf(stderr, "invalid window function %d\n", ei->fir_window_function);
+		}
 	}
 
 	{
-		int n = ecs_get_biquad_count(&ecs);
-		s->biquad_setups = calloc_or_die(n, sizeof(struct biquad_setup));
-		for (int i = 0; i < n; i++) {
-			struct biquad_setup* bqs = &s->biquad_setups[i];
-			struct ecs_biquad* bq = ecs_get_biquad(&ecs, i);
-			bqs->a0 = bq->a0;
-			bqs->a1 = bq->a1;
-			bqs->a2 = bq->a2;
-			bqs->b1 = bq->b1;
-			bqs->b2 = bq->b2;
-			/* I need to calculate the frequency response of the
-			 * biquad (using z-transform?) and figure out which
-			 * frequency is attenuated the least. i.e. find the
-			 * peak of the frequency response curve; this is the
-			 * attenuation value */
-			//bqs->attenuation = 0.99f; // XXX XXX
+		size_t sz;
+		char* ss = ecs_get_filter_strings(&ecs, &sz);
+
+		/* count strings */
+		int n = 0;
+		for (size_t i = 0; i < sz; i++) if (ss[i] == 0) n++;
+
+		session->filter_coefficients = calloc_or_die(session->fir_length * n, sizeof(*session->filter_coefficients));
+
+		int filter_index = 0;
+		size_t of = 0;
+		while (of < sz) {
+			float* coeffs = session->filter_coefficients + filter_index * session->fir_length;
+
+			char* s = ss + of;
+			flt0_scan_string(s);
+
+			int tok = flt0lex();
+
+			if (tok == 0) {
+				/* "NULL" material */
+				memset(coeffs, 0, sizeof(*coeffs) * session->fir_length);
+			} else if (tok == FLT0_BZ0) {
+				tok = flt0lex();
+				if (tok != FLT0_BEGIN) flt0_unexpected_token(tok);
+
+				#define MAX_FLT0_POINTS (256)
+				struct flt0_bz0_point fps[MAX_FLT0_POINTS];
+				int fpi = 0;
+
+				for (;;) {
+					if (fpi >= MAX_FLT0_POINTS) {
+						fprintf(stderr, "more than %d filter points!\n", MAX_FLT0_POINTS);
+						exit(EXIT_FAILURE);
+					}
+					struct flt0_bz0_point fp;
+
+					tok = flt0lex();
+					if (tok != FLT0_FLOAT) flt0_unexpected_token(tok);
+					fp.frq = flt0_get_floatval();
+
+					tok = flt0lex();
+					if (tok != FLT0_SUBSEP) flt0_unexpected_token(tok);
+
+					tok = flt0lex();
+					if (tok != FLT0_FLOAT) flt0_unexpected_token(tok);
+					fp.att = flt0_get_floatval();
+
+					tok = flt0lex();
+					if (tok != FLT0_SUBSEP) flt0_unexpected_token(tok);
+
+					tok = flt0lex();
+					if (tok != FLT0_FLOAT) flt0_unexpected_token(tok);
+					fp.pha = flt0_get_floatval();
+
+					fps[fpi] = fp;
+
+					fpi++;
+
+					tok = flt0lex();
+					if (tok == FLT0_SEP) {
+						continue;
+					} else if (tok == FLT0_END) {
+						break;
+					} else {
+						flt0_unexpected_token(tok);
+					}
+				}
+
+				tok = flt0lex();
+				if (tok != 0) flt0_unexpected_token(tok);
+
+				/* sort filter points by frequency */
+				qsort(fps, fpi, sizeof(*fps), bz0_fp_frq_sort);
+
+				int N = session->fir_length >> 1;
+				for (int i = 0; i < N; i++) {
+					float* coeff = coeffs + i*2;
+
+					float fft_freq = ((float)(i+1) / (float)N) * 0.5f * (float)session->sample_rate;
+
+					float att = 0;
+					float pha = 0;
+
+					for (int j = 0; j < fpi; j++) {
+						struct flt0_bz0_point* fp = &fps[j];
+						float fp_freq = fp->frq;
+
+						if ((j == 0 && fft_freq < fp_freq) || (j == fpi-1 && fft_freq > fp_freq)) {
+							att = fp->att;
+							pha = fp->pha;
+							break;
+						} else if (j > 0 && fft_freq >= fps[j-1].frq  && fft_freq < fp_freq) {
+							float x0 = logf(fps[j-1].frq);
+							float x1 = logf(fp_freq);
+							float x = logf(fft_freq);
+							float t = (x-x0)/(x1-x0);
+							att = bz0_crv(t, fps[j-1].att, fps[j].att);
+							pha = bz0_crv(t, fps[j-1].pha, fps[j].pha);
+							break;
+						}
+					}
+
+					coeff[0] = att;
+					/* at the nyquist frequency the value
+					 * must be its own conjugate, i.e. a
+					 * purely real value, so cancel out the
+					 * phase shift when i is N-1 */
+					coeff[1] = i==(N-1) ? 0 : pha;
+				}
+			} else {
+				flt0_unexpected_token(tok);
+			}
+
+			of += strlen(s) + 1;
+
+			filter_index++;
 		}
 	}
 
 	{
 		int n = ecs_get_emission_group_count(&ecs);
-		s->n_emission_groups = n;
+		session->n_emission_groups = n;
 	}
 
 	{
 		int n = ecs_get_microphone_count(&ecs);
-		s->n_microphones = n;
-		s->microphones = calloc_or_die(n, sizeof(struct microphone));
+		session->n_microphones = n;
+		session->microphones = calloc_or_die(n, sizeof(struct microphone));
 		for (int i = 0; i < n; i++) {
-			struct microphone* m = &s->microphones[i];
+			struct microphone* m = &session->microphones[i];
 			struct ecs_microphone* em = ecs_get_microphone(&ecs, i);
 			for (int i = 0; i < 3; i++) m->position.s[i] = em->position[i];
 		}
@@ -586,11 +735,11 @@ void ec_run(char* path, int n_workers)
 
 	{
 		int n = ecs_get_material_count(&ecs);
-		s->materials = calloc_or_die(n, sizeof(struct material));
+		session->materials = calloc_or_die(n, sizeof(struct material));
 		for (int i = 0; i < n; i++) {
-			struct material* m = &s->materials[i];
+			struct material* m = &session->materials[i];
 			struct ecs_material* em = ecs_get_material(&ecs, i);
-			m->biquad_setup_index = em->biquad_index;
+			m->filter_index = em->filter_index;
 			m->emission_group_index = em->emission_group_index;
 			m->hardness = em->hardness;
 		}
@@ -608,20 +757,20 @@ void ec_run(char* path, int n_workers)
 			nv += poly.n_vertices;
 		}
 
-		s->n_polys = n;
-		s->poly_material_indices = calloc_or_die(n, sizeof(*s->poly_material_indices));
-		s->poly_vertex_counts = calloc_or_die(n, sizeof(*s->poly_vertex_counts));
-		s->poly_vertex_cords = calloc_or_die(nv, sizeof(*s->poly_vertex_cords));
+		session->n_polys = n;
+		session->poly_material_indices = calloc_or_die(n, sizeof(*session->poly_material_indices));
+		session->poly_vertex_counts = calloc_or_die(n, sizeof(*session->poly_vertex_counts));
+		session->poly_vertex_cords = calloc_or_die(nv, sizeof(*session->poly_vertex_cords));
 
 		it = 0;
 		int index = 0;
 		int o = 0;
 		while (ecs_poly_iterator_next(&ecs, &it, &poly)) {
-			s->poly_material_indices[index] = poly.material_index;
-			s->poly_vertex_counts[index] = poly.n_vertices;
+			session->poly_material_indices[index] = poly.material_index;
+			session->poly_vertex_counts[index] = poly.n_vertices;
 			for (int i = 0; i < poly.n_vertices; i++) {
 				for (int j = 0; j < 3; j++) {
-					s->poly_vertex_cords[o].s[j] = poly.vertex_data[i*3 + j];
+					session->poly_vertex_cords[o].s[j] = poly.vertex_data[i*3 + j];
 				}
 				o++;
 			}
@@ -629,16 +778,16 @@ void ec_run(char* path, int n_workers)
 		}
 	}
 
-	s->accumulators = ecs.accumulators;
+	session->accumulators = ecs.accumulators;
 
 	int use_cpu_count = n_workers <= 0;
 	n_workers = use_cpu_count ? cpu_count() : n_workers;
 
-	s->n_rays_per_commit = 1<<20;
+	session->n_rays_per_commit = 1<<20;
 
 	printf("starting path tracing with these parameters:\n");
 	printf("  worker count: %d%s\n", n_workers, use_cpu_count ? " (ncpus)" : "");
-	printf("  rays per commit: %d\n", s->n_rays_per_commit);
+	printf("  rays per commit: %d\n", session->n_rays_per_commit);
 
 	struct worker* workers = calloc_or_die(n_workers, sizeof(*workers));
 	struct worker_thread_args* thread_args = calloc_or_die(n_workers, sizeof(*thread_args));
@@ -648,8 +797,8 @@ void ec_run(char* path, int n_workers)
 
 	for (int i = 0; i < n_workers; i++) {
 		struct worker_thread_args* args = &thread_args[i];
-		worker_init(&workers[i], s, i);
-		args->session = s;
+		worker_init(&workers[i], session, i);
+		args->session = session;
 		args->worker = &workers[i];
 		pthread_create(&args->tid, &attr, worker_thread_start, args);
 	}

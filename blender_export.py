@@ -12,6 +12,7 @@ dst = sys.argv[sys.argv.index('--') + 1]
 print("exporting %s => %s ..." % (src, dst))
 
 
+
 class ISet:
 	def __init__(self):
 		self.vimap = {}
@@ -24,46 +25,25 @@ class ISet:
 		return self.vimap[v]
 
 	def write_block(self, b):
-		b.u32(len(self.lst))
 		for data in self.lst:
 			self._write_data(b, data)
 
-class Biquads(ISet):
+class INSet(ISet):
+	def write_block(self, b):
+		b.u32(len(self.lst))
+		super().write_block(b)
+
+class Filters(ISet):
 	def get_block_id(self):
-		return b"BQD0"
+		return b"FLT0"
 
-	# http://www.earlevel.com/main/2003/02/28/biquads/
-	# http://www.earlevel.com/main/2013/10/13/biquad-calculator-v2/
-	def add(self, a0, a1, a2, b1, b2):
-		return self._add((a0, a1, a2, b1, b2))
-
-	def add_std_highpass(self):
-		# XXX too low Q kills the signal, too high Q causes
-		# amplification towards infinity
-		#  this one has a nice falloff
-		#    hz=48000hz
-		#    fc=13058hz
-		#    q=0.37
-		a0 = 0.2433380644366378
-		a1 = 0.4866761288732756
-		a2 = 0.2433380644366378
-		b1 = 0.11807119804780962
-		b2 = -0.14471894030125848
-
-		# flipping a0/a1/a2 to cause phase inversion. THIS IS HIGHLY
-		# SCIENTIFIC I SAW IT ON FRINGE
-		return self.add(-a0, -a1, -a2, b1, b2)
+	def add(self, s):
+		return self._add(s)
 
 	def _write_data(self, b, data):
-		a0,a1,a2,b1,b2 = data
-		b.f32(a0)
-		b.f32(a1)
-		b.f32(a2)
-		b.f32(b1)
-		b.f32(b2)
+		b.cstr(data)
 
-
-class EmissionGroups(ISet):
+class EmissionGroups(INSet):
 	def get_block_id(self):
 		return b"EMG0"
 
@@ -95,17 +75,17 @@ class Microphones:
 			b.padded_string(name, 64)
 			b.vec3(position)
 
-class Materials(ISet):
+class Materials(INSet):
 	def get_block_id(self):
 		return b"MAT0"
 
-	def add(self, emission_group_id, biquad_id, hardness):
-		return self._add((emission_group_id, biquad_id, hardness))
+	def add(self, emission_group_id, filter_id, hardness):
+		return self._add((emission_group_id, filter_id, hardness))
 
 	def _write_data(self, b, data):
-		emission_group_id, biquad_id, hardness = data
+		emission_group_id, filter_id, hardness = data
 		b.i32(emission_group_id)
-		b.u32(biquad_id)
+		b.u32(filter_id)
 		b.f32(hardness)
 
 class Polys:
@@ -125,7 +105,7 @@ class Polys:
 			for c in coords:
 				b.vec3(c)
 
-biquads = Biquads()
+filters = Filters()
 emission_groups = EmissionGroups()
 microphones = Microphones()
 materials = Materials()
@@ -153,16 +133,14 @@ for bo in bpy.data.objects:
 
 			if material.emit > 0:
 				emission_group_id = emission_groups.add()
-				biquad_id = biquads.add(material.emit, 0.0, 0.0, 0.0, 0.0)
+				filter_id = filters.add("")
 			else:
 				emission_group_id = -1
-				# TODO use material.diffuse_color to create a
-				# "default" biquad in the future?
-				# TODO also allow direct definition via custom
+				# TODO allow direct definition via custom
 				# properties
-				biquad_id = biquads.add_std_highpass()
+				filter_id = filters.add("bz0(500:%.3f:0,2000:%.3f:0,5000:%.3f:0)" % tuple(material.diffuse_color))
 
-			material_id = materials.add(emission_group_id, biquad_id, hardness)
+			material_id = materials.add(emission_group_id, filter_id, hardness)
 
 			polys.add(material_id, coords)
 
@@ -198,6 +176,9 @@ class ECSBlock:
 		self.buf += bytes(s, "ascii")
 		self.buf += b"\x00" * (padding - len(s))
 
+	def cstr(self, s):
+		self.buf += bytes(s, "utf-8") + b"\x00"
+
 	def pack(self):
 		if not isinstance(self.id, bytes) or len(self.id) != 4:
 			raise RuntimeError("invalid block id %s" % self.id)
@@ -217,7 +198,7 @@ class ECS:
 		# header
 		buf = b"ECSn"
 		buf += pack("I", 0xec511235) # endianess detect
-		buf += pack("I", 1) # version
+		buf += pack("I", 2) # version
 
 		# blocks
 		for obj in objs:
@@ -229,4 +210,4 @@ class ECS:
 		with open(self.filename, "wb") as f:
 			f.write(buf)
 
-ECS(dst).write([biquads, emission_groups, microphones, materials, polys])
+ECS(dst).write([filters, emission_groups, microphones, materials, polys])

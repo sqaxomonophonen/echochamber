@@ -2,12 +2,13 @@
 
 A sound path tracer.
 
-It renders an impulse response (suitable for convolution reverb) of a 3d model by applying some of the principles
-used in a visual path tracer; rays are traced from "microphones", bounced randomly off walls, in hope of hitting a
-sound emitter. Each bounce pushes a filter onto a stack analogous to how colors are multiplied together in a visual
-path tracer. When a path to a sound emitter is found, an impulse (i.e. `f[0]=1`, `f[x]=0` for `x!=0`) is filtered
-through the filter stack, delayed according to distance traveled vs speed of sound, and finally added to the output
-impulse response.
+It renders an impulse response (suitable for convolution reverb) of a 3d model
+by applying some of the principles used in a visual path tracer; rays are
+traced from "microphones", bounced randomly off walls, in hope of hitting a
+sound emitter. When a path to a sound emitter is found, a filtered impulse is
+added to the impulse response where the filtering based on which materials were
+encountered when bouncing off walls. The filtered impulse is delayed according
+to distance traveled vs speed of sound.
 
 I have no idea how "scientifically correct" any of this is, but it already produces convincing results, so uh.., yeah!
 
@@ -34,9 +35,6 @@ is currently ignored.
 
 # TODO
  - Specular reflection, use a better BRDF function in general...
- - Material control from Blender
- - Replace biquads with FIRs?
- - Better filter control (currently too easy to pass biquad coefficients that amplify certain frequencies and cause the response to "blow up")
  - Sound emitter time offset (to allow multiple impulses at various times)
  - Various microphone characteristics (currently omni-directional only, how about cardioid and friends?)
  - Air scattering? (randomly filter/refract rays based on distance traveled)
@@ -47,7 +45,6 @@ is currently ignored.
  - Animation rendering? (render actual sound rather than just an impulse response)
 
 # Thanks
- - Biquad coefficient calulator: http://www.earlevel.com/main/2013/10/13/biquad-calculator-v2/
  - Excellent compendium on global illumination: http://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
 
 # License?

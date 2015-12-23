@@ -3,6 +3,18 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+enum ecs_fir_window_function {
+	ECS_FIR_WINDOW_FN_KAISER_BESSEL = 1
+};
+
+static inline const char* ecs_fir_window_function_string(enum ecs_fir_window_function fn)
+{
+	switch (fn) {
+		case ECS_FIR_WINDOW_FN_KAISER_BESSEL: return "Kaiser-Bessel";
+	}
+	return "?";
+}
+
 struct ecs_worker_stats {
 	uint64_t n_rays;
 	uint64_t n_bounces;
@@ -31,7 +43,8 @@ struct ecs_initialization {
 	int sample_rate;
 	float speed_of_sound_units_per_second;
 	int impulse_length_samples;
-	float attenuation_product_threshold;
+	int fir_length;
+	enum ecs_fir_window_function fir_window_function;
 	int indirect_only;
 
 	struct ecs_worker_stats worker_stats;
@@ -44,8 +57,8 @@ struct ecs {
 	void* ptr;
 
 	/* mandatory blocks */
-	void* _bqd0_block;
-	size_t _bqd0_sz;
+	void* _flt0_block;
+	size_t _flt0_sz;
 
 	void* _emg0_block;
 	size_t _emg0_sz;
@@ -65,10 +78,6 @@ struct ecs {
 	float** accumulators;
 };
 
-struct ecs_biquad {
-	float a0, a1, a2, b1, b2;
-};
-
 struct ecs_emission_group {
 	char name[64];
 };
@@ -80,7 +89,7 @@ struct ecs_microphone {
 
 struct ecs_material {
 	uint32_t emission_group_index;
-	uint32_t biquad_index;
+	uint32_t filter_index;
 	float hardness;
 };
 
@@ -94,14 +103,14 @@ void ecs_init(
 	int sample_rate,
 	float speed_of_sound_units_per_second,
 	int impulse_length_samples,
-	float attenuation_product_threshold,
+	int fir_length,
+	enum ecs_fir_window_function fir_window_function,
 	int indirect_only
 );
 
 void ecs_mixdown(char* path);
 
-int ecs_get_biquad_count(struct ecs* ecs);
-struct ecs_biquad* ecs_get_biquad(struct ecs* ecs, int i);
+char* ecs_get_filter_strings(struct ecs* ecs, size_t* sz);
 
 int ecs_get_emission_group_count(struct ecs* ecs);
 struct ecs_emission_group* ecs_get_emission_group(struct ecs* ecs, int i);

@@ -193,13 +193,13 @@ void ecs_open(struct ecs* ecs, char* path)
 	}
 
 	uint32_t version = _ecs_read_u32(ecs, 8);
-	if (version != 1) {
+	if (version != 2) {
 		fprintf(stderr, "%s: unhandled version (%u)\n", path, version);
 		exit(EXIT_FAILURE);
 	}
 
 	/* look for mandatory blocks */
-	ecs->_bqd0_block = _ecs_find_or_die(ecs, "BQD0", &ecs->_bqd0_sz);
+	ecs->_flt0_block = _ecs_find_or_die(ecs, "FLT0", &ecs->_flt0_sz);
 	ecs->_emg0_block = _ecs_find_or_die(ecs, "EMG0", &ecs->_emg0_sz);
 	ecs->_mic0_block = _ecs_find_or_die(ecs, "MIC0", &ecs->_mic0_sz);
 	ecs->_mat0_block = _ecs_find_or_die(ecs, "MAT0", &ecs->_mat0_sz);
@@ -280,18 +280,18 @@ void ecs_info(char* path)
 	if (ecs.initialization) {
 		struct ecs_initialization* ini9 = ecs.initialization;
 		printf("setup:\n");
-		printf("  sample rate                 = %d hz\n", ini9->sample_rate);
-		printf("  speed of sound              = %.3f u/s\n", ini9->speed_of_sound_units_per_second);
-		printf("  impulse length              = %d samples\n", ini9->impulse_length_samples);
-		printf("  attenuation threshold       = %.3e\n", ini9->attenuation_product_threshold);
-		printf("  indirect only               = %s\n", ini9->indirect_only ? "yes" : "no");
+		printf("  sample rate          = %d hz\n", ini9->sample_rate);
+		printf("  speed of sound       = %.3f u/s\n", ini9->speed_of_sound_units_per_second);
+		printf("  impulse length       = %d samples\n", ini9->impulse_length_samples);
+		printf("  fir length           = %d\n", ini9->fir_length);
+		printf("  fir window function  = %s\n", ecs_fir_window_function_string(ini9->fir_window_function));
+		printf("  indirect only        = %s\n", ini9->indirect_only ? "yes" : "no");
 	}
 
 	printf("scene:\n");
-	printf("  number of biquads           = %d\n", _std_block_count(ecs._bqd0_block));
-	printf("  number of emission groups   = %d\n", _std_block_count(ecs._emg0_block));
-	printf("  number of microphones       = %d\n", _std_block_count(ecs._mic0_block));
-	printf("  number of materials         = %d\n", _std_block_count(ecs._mat0_block));
+	printf("  number of emission groups    = %d\n", _std_block_count(ecs._emg0_block));
+	printf("  number of microphones        = %d\n", _std_block_count(ecs._mic0_block));
+	printf("  number of materials          = %d\n", _std_block_count(ecs._mat0_block));
 	// XXX count is implicit now...
 	//printf("  number of polys             = %d\n", _std_block_count(ecs._ply0_block));
 
@@ -304,7 +304,8 @@ void ecs_init(
 	int sample_rate,
 	float speed_of_sound_units_per_second,
 	int impulse_length_samples,
-	float attenuation_product_threshold,
+	int fir_length,
+	enum ecs_fir_window_function fir_window_function,
 	int indirect_only
 ) {
 	struct ecs ecs;
@@ -325,7 +326,8 @@ void ecs_init(
 	ini9->sample_rate = sample_rate;
 	ini9->speed_of_sound_units_per_second = speed_of_sound_units_per_second;
 	ini9->impulse_length_samples = impulse_length_samples;
-	ini9->attenuation_product_threshold = attenuation_product_threshold;
+	ini9->fir_length = fir_length;
+	ini9->fir_window_function = fir_window_function;
 	ini9->indirect_only = indirect_only;
 
 	if (!is_initialized) {
@@ -459,14 +461,10 @@ static inline void* _ecs_get_std_obj(struct ecs* ecs, void* block, size_t sz, in
 	return (char*)block + 4 + sz*i;
 }
 
-int ecs_get_biquad_count(struct ecs* ecs)
+char* ecs_get_filter_strings(struct ecs* ecs, size_t* sz)
 {
-	return _std_block_count(ecs->_bqd0_block);
-}
-
-struct ecs_biquad* ecs_get_biquad(struct ecs* ecs, int i)
-{
-	return _ecs_get_std_obj(ecs, ecs->_bqd0_block, sizeof(struct ecs_biquad), i, "biquad");
+	if (sz != NULL) *sz = ecs->_flt0_sz;
+	return ecs->_flt0_block;
 }
 
 int ecs_get_emission_group_count(struct ecs* ecs)
