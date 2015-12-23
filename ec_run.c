@@ -408,7 +408,7 @@ static void ray_pew_pew(
 				float k = (float)i - s0f;
 				float Ck = C * k;
 
-				float y = 1;
+				float y = 0;
 
 				for (int n = 0; n < Nhalf; n++) {
 					float phi0 = Ck * (float)(n+1);
@@ -422,7 +422,8 @@ static void ray_pew_pew(
 						impfft * coefficient_product[n<<1] * (cosf(phi0) + cosf(phi1)) -
 						impfft * coefficient_product[(n<<1)+1] * (sinf(phi0) - sinf(phi1));
 				}
-				acc[i] = y * fir_window[i - s0];
+				float yw = y * fir_window[i - s0];
+				acc[i] += yw;
 			}
 
 			stats->n_hits++;
