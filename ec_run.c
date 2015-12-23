@@ -335,12 +335,14 @@ static void ray_pew_pew(
 			for (int i = 0; i < fir_length/2; i++) {
 				/* (a+bi)*(c+di) = (a*c - b*d) + (b*c + a*d)i */
 				int idx = i<<1;
-				coefficient_product[idx] =
+				float re =
 					coefficient_product[idx] * filter_coefficients[idx]
 					- coefficient_product[idx+1] * filter_coefficients[idx+1];
-				coefficient_product[idx+1] =
+				float im =
 					coefficient_product[idx+1] * filter_coefficients[idx]
 					+ coefficient_product[idx] * filter_coefficients[idx+1];
+				coefficient_product[idx] = re;
+				coefficient_product[idx+1] = im;
 			}
 
 
