@@ -23,14 +23,7 @@ uint32_t: data terminator (must have the value 0xdeadbeef?)
 
 BLOCK(FLT0) (filter block; file must have exactly one)
 n x char*: multiple zero-terminated strings until the end of the block
-Strings encode filters. Currently only "bz0" filters are supported. The format
-is bz0(<fp>[,<fp>]...) where fp is a filter point with the format:
-<freq>:<attenuation>[:<phaseshift>]. E.g.:
- bz0(500:0.88:0,1500:0.5:0.1)
-means 2 filter points; one at 500hz with attenuation=0.88 and phaseshift=0; and
-one more at 1.5khz with attenuation=0.5 and phaseshift=0.1. Attenuation is a
-multiplier, 0.5 means losing half the energy at a frequency when using this
-filter. Phase shift is measured in radians.
+Strings encode filters, see "Blender integration" in README.md for details.
 
 
 BLOCK(EMG0) (emission groups; file must have exactly one)
