@@ -11,7 +11,7 @@
 #include "sys.h"
 #include "cpu.h"
 #include "flt0.h"
-#include "flt0.yy.h"
+#include "flt0.ll.h"
 
 #define EC_MAX_BOUNCES (150)
 
