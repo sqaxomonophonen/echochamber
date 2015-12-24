@@ -193,7 +193,7 @@ void ecs_open(struct ecs* ecs, char* path)
 	}
 
 	uint32_t version = _ecs_read_u32(ecs, 8);
-	if (version != 2) {
+	if (version != 3) {
 		fprintf(stderr, "%s: unhandled version (%u)\n", path, version);
 		exit(EXIT_FAILURE);
 	}

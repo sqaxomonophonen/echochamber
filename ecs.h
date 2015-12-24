@@ -88,9 +88,10 @@ struct ecs_microphone {
 };
 
 struct ecs_material {
-	uint32_t emission_group_index;
-	uint32_t filter_index;
-	float hardness;
+	int32_t emission_group_index;
+	int32_t diffuse_filter_index;
+	int32_t specular_filter_index;
+	int32_t hardness;
 };
 
 

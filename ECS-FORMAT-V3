@@ -1,4 +1,4 @@
-ECS FORMAT, VERSION 2
+ECS FORMAT, VERSION 3
 
 float is 32bit
 vec3 is float[3] / float x,y,z;
@@ -9,7 +9,7 @@ endianness determined by 0xec511235
 HEADER
 char[4]: "ECSn" (magic, echochamber scene)
 uint32_t: 0xec511235 (endianness detection)
-uint32_t: version (always 2)
+uint32_t: version (always 3)
 BLOCK* (until EOF)
 
 
@@ -23,6 +23,14 @@ uint32_t: data terminator (must have the value 0xdeadbeef?)
 
 BLOCK(FLT0) (filter block; file must have exactly one)
 n x char*: multiple zero-terminated strings until the end of the block
+Strings encode filters. Currently only "bz0" filters are supported. The format
+is bz0(<fp>[,<fp>]...) where fp is a filter point with the format:
+<freq>:<attenuation>[:<phaseshift>]. E.g.:
+ bz0(500:0.88:0,1500:0.5:0.1)
+means 2 filter points; one at 500hz with attenuation=0.88 and phaseshift=0; and
+one more at 1.5khz with attenuation=0.5 and phaseshift=0.1. Attenuation is a
+multiplier, 0.5 means losing half the energy at a frequency when using this
+filter. Phase shift is measured in radians.
 
 
 BLOCK(EMG0) (emission groups; file must have exactly one)
@@ -44,8 +52,9 @@ BLOCK(MAT0) (materials; file must have exactly one)
 uint32_t n_materials
 n_materials x {
 	int32_t: emission group index, -1 if not an emitter
-	uint32_t: filter index
-	float: specular hardness
+	int32_t: diffuse filter index, -1 if none
+	int32_t: specular filter index, -1 if none
+	uint32_t: specular hardness (-1 if perfect mirror, undefined if specular filter index is -1)
 }
 
 BLOCK(PLY0) (polygons; file must have exactly one)
@@ -56,4 +65,5 @@ BLOCK(PLY0) (polygons; file must have exactly one)
 		vec3: coordinate
 	}
 }*
+
 

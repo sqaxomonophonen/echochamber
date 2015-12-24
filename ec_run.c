@@ -78,10 +78,16 @@ static inline union vec3 vec3_unit(union vec3 v)
 	return vec3_scale(v, 1.0 / sqrtf(vec3_dot(v, v)));
 }
 
+static inline union vec3 vec3_basis_tx(union vec3 v, union vec3 bx, union vec3 by, union vec3 bz)
+{
+	return vec3_add(vec3_scale(bx, v.x), vec3_add(vec3_scale(by, v.y), vec3_scale(bz, v.z)));
+}
+
 struct material {
-	int filter_index;
-	float hardness;
 	int emission_group_index; // -1 -> not an emitter
+	int diffuse_filter_index;
+	int specular_filter_index;
+	int hardness;
 };
 
 #if 0
@@ -247,7 +253,7 @@ static inline union vec3 vec3_random_hemisphere_cosine(struct rng* rng)
 
 	/*
 	(35) Generate random direction on unit hemisphere proportional to
-	cosine-weight solid angle
+	cosine-weighted solid angle
 	http://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
 	*/
 
@@ -255,6 +261,27 @@ static inline union vec3 vec3_random_hemisphere_cosine(struct rng* rng)
 		.x = r * cosf(phi),
 		.y = r * sinf(phi),
 		.z = sqrtf(1 - r*r)
+	};
+}
+
+static inline union vec3 vec3_random_hemisphere_cosine_lobe(struct rng* rng, int n)
+{
+	float r1 = rng_float(rng);
+	float r2 = rng_float(rng);
+
+	/*
+	(36) Generate random direction on unit hemisphere proportional to
+	cosine lobe around normal
+	http://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
+	*/
+
+	float phi = 2 * M_PI * r1;
+	float r = sqrtf(1 - powf(r2, 2.0 / ((float)(n+1))));
+
+	return (union vec3) {
+		.x = r * cosf(phi),
+		.y = r * sinf(phi),
+		.z = pow(r2, 1.0 / ((float)(n+1)))
 	};
 }
 
@@ -331,7 +358,24 @@ static void ray_pew_pew(
 
 			bounces++;
 
-			float* filter_coefficients = session->filter_coefficients + fir_length * m->filter_index;
+			if (m->diffuse_filter_index < 0 && m->specular_filter_index < 0) {
+				/* completely absorbent material; eats ray; nom
+				 * nom; abort */
+				return;
+			}
+
+			int is_specular;
+			if (m->diffuse_filter_index >= 0 && m->specular_filter_index < 0) {
+				is_specular = 0;
+			} else if (m->diffuse_filter_index < 0 && m->specular_filter_index >= 0) {
+				is_specular = 1;
+			} else {
+				is_specular = rng_uint32(&worker->rng)&1;
+			}
+
+			int filter_index = is_specular ? m->specular_filter_index : m->diffuse_filter_index;
+
+			float* filter_coefficients = session->filter_coefficients + fir_length * filter_index;
 			for (int i = 0; i < fir_length/2; i++) {
 				/* (a+bi)*(c+di) = (a*c - b*d) + (b*c + a*d)i */
 				int idx = i<<1;
@@ -343,36 +387,47 @@ static void ray_pew_pew(
 					+ coefficient_product[idx] * filter_coefficients[idx+1];
 				coefficient_product[idx] = re;
 				coefficient_product[idx+1] = im;
+
+				/* TODO sum_of_squares += re*re + im*im or
+				 * += sqrt(re*re + im*im) or something? would
+				 * be nice to cull faint signals */
 			}
 
 
-			// calculate new ray, and continue
+			/* calculate new ray, and continue */
+
 			ray_origin = nearest_position;
-			#if 1
-			{
+
+			union vec3* vs = &session->poly_vertex_cords[nearest_voff];
+			if (is_specular) {
+				union vec3 normal = vec3_unit(vec3_cross(vec3_sub(vs[1], vs[0]), vec3_sub(vs[2], vs[0])));
+				union vec3 incident = vec3_unit(ray_direction);
+				union vec3 reflect = vec3_unit(vec3_sub(incident, vec3_scale(normal, 2.0 * vec3_dot(normal, incident))));
+				if (m->hardness < 0) {
+					/* perfect reflection */
+					ray_direction = reflect;
+				} else {
+					/* specular reflection */
+					union vec3 bx = fabsf(vec3_dot(reflect, normal)) < 0.5f
+						? vec3_unit(vec3_sub(vs[1], vs[0]))
+						: normal;
+					union vec3 by = vec3_cross(reflect, bx);
+					union vec3 d = vec3_random_hemisphere_cosine_lobe(&worker->rng, m->hardness);
+					ray_direction = vec3_basis_tx(d, bx, by, reflect);
+					if (vec3_dot(ray_direction, normal) < 0) {
+						/* new direction points into
+						 * surface; reflect again */
+						ray_direction = vec3_unit(vec3_sub(ray_direction, vec3_scale(normal, 2.0 * vec3_dot(normal, ray_direction))));
+					}
+				}
+			} else {
 				/* diffuse reflection */
-				union vec3* vs = &session->poly_vertex_cords[nearest_voff];
 				union vec3 bx = vec3_unit(vec3_sub(vs[1], vs[0]));
 				union vec3 bz = vec3_unit(vec3_cross(bx, vec3_sub(vs[2], vs[0])));
 				union vec3 by = vec3_cross(bz, bx);
 				union vec3 d = vec3_random_hemisphere_cosine(&worker->rng);
-				ray_direction = vec3_add(
-					vec3_scale(bx, d.x),
-					vec3_add(
-						vec3_scale(by, d.y),
-						vec3_scale(bz, d.z)
-					)
-				);
+				ray_direction = vec3_basis_tx(d, bx, by, bz);
 			}
-			#else
-			{
-				/* perfect reflection */
-				union vec3* vs = &session->poly_vertex_cords[nearest_voff];
-				union vec3 normal = vec3_unit(vec3_cross(vec3_sub(vs[1], vs[0]), vec3_sub(vs[2], vs[0])));
-				union vec3 incident = vec3_unit(ray_direction);
-				ray_direction = vec3_unit(vec3_sub(incident, vec3_scale(normal, 2.0 * vec3_dot(normal, incident))));
-			}
-			#endif
 		} else {
 			/* hit an emitter; calculate contribution */
 
@@ -650,17 +705,19 @@ void ec_run(char* path, int n_workers)
 					fp.att = flt0_get_floatval();
 
 					tok = flt0lex();
-					if (tok != FLT0_SUBSEP) flt0_unexpected_token(tok);
+					if (tok == FLT0_SEP || tok == FLT0_END) {
+						fp.pha = 0;
+					} else if (tok == FLT0_SUBSEP) {
+						tok = flt0lex();
+						if (tok != FLT0_FLOAT) flt0_unexpected_token(tok);
+						fp.pha = flt0_get_floatval();
+						tok = flt0lex();
+					} else {
+						flt0_unexpected_token(tok);
+					}
 
-					tok = flt0lex();
-					if (tok != FLT0_FLOAT) flt0_unexpected_token(tok);
-					fp.pha = flt0_get_floatval();
+					fps[fpi++] = fp;
 
-					fps[fpi] = fp;
-
-					fpi++;
-
-					tok = flt0lex();
 					if (tok == FLT0_SEP) {
 						continue;
 					} else if (tok == FLT0_END) {
@@ -743,8 +800,9 @@ void ec_run(char* path, int n_workers)
 		for (int i = 0; i < n; i++) {
 			struct material* m = &session->materials[i];
 			struct ecs_material* em = ecs_get_material(&ecs, i);
-			m->filter_index = em->filter_index;
 			m->emission_group_index = em->emission_group_index;
+			m->diffuse_filter_index = em->diffuse_filter_index;
+			m->specular_filter_index = em->specular_filter_index;
 			m->hardness = em->hardness;
 		}
 	}

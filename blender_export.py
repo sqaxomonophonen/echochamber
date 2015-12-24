@@ -13,6 +13,14 @@ print("exporting %s => %s ..." % (src, dst))
 
 
 
+def get_custom_props(bo):
+	props = {}
+	for k in bo.keys():
+		if k[0] == "_": continue
+		props[k] = bo[k]
+	return props
+
+
 class ISet:
 	def __init__(self):
 		self.vimap = {}
@@ -79,14 +87,15 @@ class Materials(INSet):
 	def get_block_id(self):
 		return b"MAT0"
 
-	def add(self, emission_group_id, filter_id, hardness):
-		return self._add((emission_group_id, filter_id, hardness))
+	def add(self, emission_group_id, diffuse_filter_id, specular_filter_id, hardness):
+		return self._add((emission_group_id, diffuse_filter_id, specular_filter_id, hardness))
 
 	def _write_data(self, b, data):
-		emission_group_id, filter_id, hardness = data
+		emission_group_id, diffuse_filter_id, specular_filter_id, hardness = data
 		b.i32(emission_group_id)
-		b.u32(filter_id)
-		b.f32(hardness)
+		b.i32(diffuse_filter_id)
+		b.i32(specular_filter_id)
+		b.i32(hardness)
 
 class Polys:
 	def get_block_id(self):
@@ -131,17 +140,52 @@ for bo in bpy.data.objects:
 
 			hardness = material.specular_hardness/512.0
 
+			emission_group_id = -1
+			diffuse_filter_id = -1
+			specular_filter_id = -1
+			hardness = 0
 			if material.emit > 0:
 				emission_group_id = emission_groups.add()
-				filter_id = filters.add("")
 			else:
-				emission_group_id = -1
-				# TODO allow direct definition via custom
-				# properties
-				r,g,b = tuple(material.diffuse_color)
-				filter_id = filters.add("bz0(500:%.3f:0,2000:%.3f:0,5000:%.3f:0)" % (-r,-g,-b))
+				def map_material(color, intensity):
+					r,g,b = map(lambda x: -x*intensity, tuple(color))
+					if r == 0 and g == 0 and b == 0:
+						return -1
+					else:
+						return filters.add("bz0(500:%.3f,2000:%.3f,5000:%.3f)" % (r,g,b))
 
-			material_id = materials.add(emission_group_id, filter_id, hardness)
+				props = get_custom_props(material)
+
+				c_flt = props["flt"] if "flt" in props else None
+				c_dflt = props["dflt"] if "dflt" in props else None
+				c_sflt = props["sflt"] if "sflt" in props else None
+
+				if c_dflt:
+					diffuse_filter_id = filters.add(c_dflt)
+
+				if c_sflt:
+					specular_filter_id = filters.add(c_sflt)
+
+				if c_flt:
+					if diffuse_filter_id == -1:
+						diffuse_filter_id = filters.add(c_flt)
+					if specular_filter_id == -1:
+						specular_filter_id = filters.add(c_flt)
+
+				if diffuse_filter_id == -1:
+					diffuse_filter_id = map_material(material.diffuse_color, material.diffuse_intensity)
+
+				if specular_filter_id == -1:
+					specular_filter_id = map_material(material.specular_color, material.specular_intensity)
+
+				if "mirror" in props and int(props["mirror"]) != 0:
+					hardness = -1
+				elif "hardness" in props:
+					hardness = int(props["hardness"])
+				else:
+					hardness = material.specular_hardness
+
+			material_id = materials.add(emission_group_id, diffuse_filter_id, specular_filter_id, hardness)
 
 			polys.add(material_id, coords)
 
@@ -199,7 +243,7 @@ class ECS:
 		# header
 		buf = b"ECSn"
 		buf += pack("I", 0xec511235) # endianess detect
-		buf += pack("I", 2) # version
+		buf += pack("I", 3) # version
 
 		# blocks
 		for obj in objs:
