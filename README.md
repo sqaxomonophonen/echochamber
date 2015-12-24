@@ -43,14 +43,14 @@ one at 500hz with attenuation=0.88 and phaseshift=0; and one more at 1.5khz with
 - "Indirect only" mode (`-I` switch to `ec init`); discards direct response, useful for dry/wet control
 
 # TODO
- - Specular reflection, use a better BRDF function in general...
+ - Fix broken BRDF... math be hard, yo
  - Sound emitter time offset (to allow multiple impulses at various times)
  - Various microphone characteristics (currently omni-directional only, how about cardioid and friends?)
  - Air scattering? (randomly filter/refract rays based on distance traveled)
  - Subsurface scattering?
  - Finish `ec mixdown`; one .wav per microphone; specify mix levels for each emission group
  - Ray-polygon intersection optimizations
- - Support for Blender smoothing groups?
+ - Smooth surfaces via Blender smoothing groups
  - Animation rendering? (render actual sound rather than just an impulse response)
 
 # Thanks
