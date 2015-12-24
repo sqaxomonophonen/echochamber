@@ -24,8 +24,17 @@ mplayer room2.ecs.wav
 
 # Blender integration
 
-Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Non emitting materials are reflectors where the diffuse RGB color is mapped to a filter (red=500hz, green=2khz, blue=5khz). Pretty much everything else
-is currently ignored.
+Cameras are microphones. Materials with non-zero emit parameters are sound emitters. Non-emitting materials are reflectors that apply filters to reflected rays. By default the diffuse and specular colors are mapped so that red controls a filter point at 500hz, green controls 2khz and blue controls 5khz. Specular hardness is mapped directly. You can override these default mappings with custom material properties in Blender:
+ - `flt`: diffuse/specular filter
+ - `dflt`: diffuse filter
+ - `sflt`: specular filter
+ - `hardness`: specular hardness
+ - `mirror`: if non-zero then hardness is infinite, i.e. it's a perfect mirror
+
+Filter properties contains encoded filters. Currently only `bz0` filters are supported where the frequency
+response is interpolated between cubic 1d bezier splines (control points always have the same values as neighbour end points). The format is `bz0(<fp>[,<fp>]...)` where `fp` is a filter point with the format:
+`<freq>:<attenuation>[:<phaseshift>]`. E.g. `bz0(500:0.88:0,1500:0.5:0.1)` means 2 filter points;
+one at 500hz with attenuation=0.88 and phaseshift=0; and one more at 1.5khz with attenuation=0.5 and phaseshift=0.1. Attenuation is a multiplier, 0.5 means losing half the energy at its frequency. Phase shift is measured in radians.
 
 
 # Features
