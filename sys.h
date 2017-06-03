@@ -19,7 +19,7 @@ static inline void* calloc_or_die(size_t nmemb, size_t size)
 
 static inline void wrong(char* msg)
 {
-	fprintf(stderr, msg);
+	fprintf(stderr, "%s", msg);
 	exit(EXIT_FAILURE);
 }
 
