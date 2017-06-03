@@ -10,7 +10,8 @@ added to the impulse response where the filtering based on which materials were
 encountered when bouncing off walls. The filtered impulse is delayed according
 to distance traveled vs speed of sound.
 
-I have no idea how "scientifically correct" any of this is, but it already produces convincing results, so uh.., yeah!
+I have no idea how "scientifically correct" any of this is, but it already
+produces convincing results, so uh.., yeah!
 
 ## Try this
 ```
@@ -20,7 +21,21 @@ I have no idea how "scientifically correct" any of this is, but it already produ
 # ... wait a few seconds and press ctrl+c
 ./ec mixdown room2.ecs
 mplayer room2.ecs.wav
+./ec run room2.ecs
+# ... wait for 20 million rays and press ctrl+c
+./ec mixdown room2.ecs
+mplayer room2.ecs.wav
 ```
+
+As you might've noticed, the second time you run `ec run` it continues from
+where you stopped it, and you might also have noticed the second `.wav` was
+less noisy. This is typical for path tracers; a render never finishes, it just
+improves and gets less noisy the longer you run it. Since a short render is
+typically intelligible you can use this feature to tweak parameters before the
+"final render".
+
+In Apple Logic you can drag `room2.ecs.wav` directly into Space Designer to use
+it.
 
 # Blender integration
 
